@@ -10,7 +10,7 @@
 # Hardware:
 #   alienware_wmi hwmon interface
 #
-# Privileged writes are delegated to pkexec.
+# Privileged writes use a restricted, non-interactive sudo rule.
 
 set -Eeuo pipefail
 
@@ -120,13 +120,11 @@ show_status() {
 change_mode() {
     local mode="$1"
 
-    command -v pkexec >/dev/null 2>&1 ||
-        error "pkexec is required."
+    command -v sudo >/dev/null 2>&1 ||
+        error "sudo is required."
 
-    printf 'Requesting fan control authorization...\n'
-
-    pkexec "$WRITER_PATH" "$mode" ||
-        error "Fan control operation was not completed."
+    sudo -n "$WRITER_PATH" "$mode" ||
+        error "Fan control operation failed. Check installation and sudo permissions."
 
     printf '\n'
     show_status
