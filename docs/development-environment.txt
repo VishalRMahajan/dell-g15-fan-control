@@ -1,0 +1,11 @@
+=== SYSTEM ===
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+
+=== GNOME ===
+GNOME Shell 50.1
+
+=== KERNEL ===
+7.0.0-42-generic
+
+=== HARDWARE ===
+Model name:                              12th Gen Intel(R) Core(TM) i5-12500H

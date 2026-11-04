@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+#
+# fanctl-write
+# Low-level Dell fan boost controller.
+#
+# Usage:
+#   fanctl-write boost
+#   fanctl-write auto
+
+set -Eeuo pipefail
+
+readonly DRIVER="alienware_wmi"
+if [[ "$EUID" -eq 0 ]]; then
+    readonly HWMON_ROOT="/sys/class/hwmon"
+else
+    readonly HWMON_ROOT="${FANCTL_HWMON_ROOT:-/sys/class/hwmon}"
+fi
+
+error() {
+    printf 'fanctl-write: %s\n' "$*" >&2
+    exit 1
+}
+
+find_hwmon() {
+    local directory
+
+    for directory in "$HWMON_ROOT"/hwmon*; do
+        [[ -r "$directory/name" ]] || continue
+
+        if [[ "$(<"$directory/name")" == "$DRIVER" ]]; then
+            printf '%s\n' "$directory"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+apply_mode() {
+    local mode="$1"
+    local target directory
+    local file1 file2
+    local previous1 previous2
+
+    case "$mode" in
+        boost) target=255 ;;
+        auto)  target=0 ;;
+        *) error "Unsupported mode: $mode" ;;
+    esac
+
+    directory="$(find_hwmon)" ||
+        error "Dell fan controller not found."
+
+    file1="$directory/fan1_boost"
+    file2="$directory/fan2_boost"
+
+    [[ -f "$file1" && -r "$file1" && -w "$file1" ]] ||
+        error "Fan 1 control is unavailable."
+
+    [[ -f "$file2" && -r "$file2" && -w "$file2" ]] ||
+        error "Fan 2 control is unavailable."
+
+    previous1="$(<"$file1")"
+    previous2="$(<"$file2")"
+
+    [[ "$previous1" =~ ^[0-9]+$ ]] ||
+        error "Invalid Fan 1 boost value."
+
+    [[ "$previous2" =~ ^[0-9]+$ ]] ||
+        error "Invalid Fan 2 boost value."
+
+    if ! printf '%s\n' "$target" > "$file1"; then
+        error "Failed to update Fan 1."
+    fi
+
+    if ! printf '%s\n' "$target" > "$file2"; then
+        if ! printf '%s\n' "$previous1" > "$file1"; then
+            error "Fan 2 update failed and Fan 1 rollback failed."
+        fi
+
+        error "Fan 2 update failed. Fan 1 rollback attempted."
+    fi
+
+    printf 'Fan boost updated successfully: %s\n' "$mode"
+}
+
+[[ $# -eq 1 ]] || error "Usage: fanctl-write {boost|auto}"
+
+apply_mode "$1"

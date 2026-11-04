@@ -1,0 +1,29 @@
+# Local environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Generated files
+*.log
+*.tmp
+*.bak
+*.pyc
+__pycache__/
+
+# Test artifacts
+coverage/
+test-results/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local development
+*.local.sh

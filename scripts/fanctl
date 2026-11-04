@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+#
+# fanctl - Dell G-Series Linux fan controller
+#
+# Commands:
+#   fanctl status
+#   fanctl boost
+#   fanctl auto
+#
+# Hardware:
+#   alienware_wmi hwmon interface
+#
+# Privileged writes are delegated to pkexec.
+
+set -Eeuo pipefail
+
+readonly DRIVER="alienware_wmi"
+readonly HWMON_ROOT="${FANCTL_HWMON_ROOT:-/sys/class/hwmon}"
+readonly MAX_BOOST=255
+readonly NORMAL_BOOST=0
+
+readonly WRITER_PATH="/usr/local/libexec/dell-g15-fan-control/fanctl-write"
+
+error() {
+    printf 'fanctl: error: %s\n' "$*" >&2
+    exit 1
+}
+
+find_hwmon() {
+    local directory
+
+    for directory in "$HWMON_ROOT"/hwmon*; do
+        [[ -r "$directory/name" ]] || continue
+
+        if [[ "$(<"$directory/name")" == "$DRIVER" ]]; then
+            printf '%s\n' "$directory"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+get_hwmon() {
+    find_hwmon || error "Driver '$DRIVER' was not found."
+}
+
+get_boost_file() {
+    local directory="$1"
+    local fan="$2"
+    local file="$directory/fan${fan}_boost"
+
+    [[ -r "$file" ]] || error "Fan $fan boost control is unavailable."
+    printf '%s\n' "$file"
+}
+
+read_rpm() {
+    local directory="$1"
+    local fan="$2"
+    local file="$directory/fan${fan}_input"
+    local value
+
+    if [[ -r "$file" ]]; then
+        value="$(<"$file")"
+        [[ "$value" =~ ^[0-9]+$ ]] && {
+            printf '%s' "$value"
+            return
+        }
+    fi
+
+    printf 'unavailable'
+}
+
+read_boost() {
+    local file="$1"
+    local value
+
+    value="$(<"$file")"
+    [[ "$value" =~ ^[0-9]+$ ]] ||
+        error "Unexpected boost value in $file"
+
+    printf '%s' "$value"
+}
+
+show_status() {
+    local directory
+    local fan1 fan2
+    local boost1 boost2
+    local state
+
+    directory="$(get_hwmon)"
+
+    fan1="$(get_boost_file "$directory" 1)"
+    fan2="$(get_boost_file "$directory" 2)"
+
+    boost1="$(read_boost "$fan1")"
+    boost2="$(read_boost "$fan2")"
+
+    if [[ "$boost1" == "$MAX_BOOST" &&
+          "$boost2" == "$MAX_BOOST" ]]; then
+        state="Maximum boost"
+    elif [[ "$boost1" == "$NORMAL_BOOST" &&
+            "$boost2" == "$NORMAL_BOOST" ]]; then
+        state="Automatic"
+    else
+        state="Mixed / custom"
+    fi
+
+    printf '\nDell Fan Control\n'
+    printf '%s\n' '-------------------------'
+    printf 'Driver:       %s\n' "$DRIVER"
+    printf 'Interface:    %s\n' "$(basename "$directory")"
+    printf 'Fan 1:        %s RPM\n' "$(read_rpm "$directory" 1)"
+    printf 'Fan 2:        %s RPM\n' "$(read_rpm "$directory" 2)"
+    printf 'Fan 1 boost:  %s\n' "$boost1"
+    printf 'Fan 2 boost:  %s\n' "$boost2"
+    printf 'Mode:         %s\n\n' "$state"
+}
+
+change_mode() {
+    local mode="$1"
+
+    command -v pkexec >/dev/null 2>&1 ||
+        error "pkexec is required."
+
+    printf 'Requesting fan control authorization...\n'
+
+    pkexec "$WRITER_PATH" "$mode" ||
+        error "Fan control operation was not completed."
+
+    printf '\n'
+    show_status
+}
+
+usage() {
+    cat <<'USAGE'
+Dell G-Series Fan Control
+
+Usage:
+  fanctl status    Display fan RPM and boost state
+  fanctl boost     Request maximum fan boost
+  fanctl auto      Restore firmware fan control
+  fanctl help      Show this help
+
+USAGE
+}
+
+main() {
+    case "${1:-help}" in
+        status)
+            show_status
+            ;;
+        boost)
+            change_mode boost
+            ;;
+        auto)
+            change_mode auto
+            ;;
+        help|-h|--help)
+            usage
+            ;;
+        *)
+            usage
+            error "Unknown command: $1"
+            ;;
+    esac
+}
+
+main "$@"
