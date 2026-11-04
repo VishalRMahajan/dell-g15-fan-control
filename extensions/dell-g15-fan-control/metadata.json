@@ -1,0 +1,7 @@
+{
+  "uuid": "dell-g15-fan-control@vishalrmahajan.in",
+  "name": "Dell G15 Fan Control",
+  "description": "Monitor and control Dell G15 laptop fans.",
+  "version": 1,
+  "shell-version": ["50"]
+}
